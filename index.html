@@ -30,6 +30,13 @@
   .op input{position:absolute;opacity:0;pointer-events:none}
   .op span{display:inline-block;padding:10px 14px;border:1.5px solid #cdd5e6;border-radius:10px;font-size:14px;background:#fff;cursor:pointer}
   .op input:checked+span{background:#3d5a99;color:#fff;border-color:#3d5a99}
+  .avisos{background:linear-gradient(135deg,#fff4e0,#ffe8c2);border:2px solid #f0a23b;border-radius:14px;padding:14px 16px 12px;margin-bottom:12px;box-shadow:0 2px 6px rgba(240,162,59,.25)}
+  .avisos-titulo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#a85d00;margin:0 0 8px}
+  .avisos-icono{font-size:20px;animation:latido 1.6s ease-in-out infinite}
+  .avisos p{margin:6px 0 0;font-size:16px;font-weight:600;line-height:1.4;color:#5c3a00}
+  .avisos p span{display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:#a85d00;letter-spacing:.04em}
+  @keyframes latido{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+  @media (prefers-reduced-motion:reduce){.avisos-icono{animation:none}}
   .incluye{font-size:14px;margin:0 0 14px}
   .incluye span{font-weight:600;color:#3d5a99}
   .incluye em{color:#6b7280;font-size:12px}
@@ -210,6 +217,9 @@ function render() {
   encabezado('Pedido de comida', subtitulo());
   const app = limpiarApp();
 
+  // Avisos (renglón "Notas" del menú) hasta arriba, para que todos los vean.
+  agregar(app, avisos());
+
   if (!d.hayServicio) {
     agregar(app, el('section', { class: 'card' }, el('p', null, 'Hoy no hay servicio de comedor.')));
   } else if (d.abierto) {
@@ -223,24 +233,28 @@ function render() {
 
   if (d.hayServicio) agregar(app, consulta());
 
-  const info = (d.categorias || []).filter(function (c) { return c.info; });
-  if (info.length) {
-    agregar(app, el('section', { class: 'card' },
-      el('h2', null, 'Avisos de hoy'),
-      info.map(function (c) { return el('p', { class: 'nota' }, el('b', null, c.categoria + ': '), c.texto); })
-    ));
-  }
-
   agregar(app, menuSemanal());
   agregar(app, el('footer', null, 'Comedor Canplast'));
 }
 
-function grupo(titulo, nombre, opciones, extra) {
+function avisos() {
+  const info = (DATOS.categorias || []).filter(function (c) { return c.info && c.texto; });
+  if (!info.length) return null;
+  return el('section', { class: 'avisos', role: 'alert' },
+    el('div', { class: 'avisos-titulo' }, el('span', { class: 'avisos-icono' }, '📢'), 'Aviso importante de hoy'),
+    info.map(function (c) {
+      const etiquetaNota = /^notas?$/i.test(String(c.categoria).trim()) ? null : el('span', null, c.categoria);
+      return el('p', null, etiquetaNota, c.texto);
+    })
+  );
+}
+
+function grupo(titulo, nombre, opciones, extra, marcada) {
   return el('fieldset', null,
     el('legend', null, titulo),
     el('div', { class: 'ops' }, opciones.map(function (o) {
       return el('label', { class: 'op' },
-        el('input', { type: 'radio', name: nombre, value: o }),
+        el('input', { type: 'radio', name: nombre, value: o, checked: !!marcada && marcada === o }),
         el('span', null, etiqueta(o))
       );
     })),
@@ -290,6 +304,11 @@ function formulario() {
 
   d.categorias.forEach(function (c, i) {
     if (c.info) return;
+    if (c.opcional) {
+      // Una sola opción (ej. Guarnición): viene marcada; se puede cambiar a "Ninguno".
+      campos.push(grupo(c.categoria, 'cat:' + c.categoria, [c.opciones[0], NINGUNO], null, c.opciones[0]));
+      return;
+    }
     if (!c.eleccion) {
       campos.push(el('div', { class: 'incluye' }, el('span', null, c.categoria + ': '), c.opciones[0] + ' ', el('em', null, '(incluido)')));
       return;
@@ -399,7 +418,12 @@ async function enviar(ev) {
   };
   for (let i = 0; i < d.categorias.length; i++) {
     const c = d.categorias[i];
-    if (c.info || !c.eleccion) continue;
+    if (c.info) continue;
+    if (c.opcional) {
+      datos.elecciones[c.categoria] = val('cat:' + c.categoria) || c.opciones[0];
+      continue;
+    }
+    if (!c.eleccion) continue;
     const v = val('cat:' + c.categoria);
     if (!v) return estado('Falta elegir: ' + c.categoria, 'error');
     if (v === OTRO) {
